@@ -3,7 +3,6 @@ from termcolor import colored
 import httpx
 import trio
 
-from subprocess import Popen, PIPE
 import os
 from argparse import ArgumentParser
 import csv
@@ -62,28 +61,17 @@ def get_functions(modules,args=None):
                 websites.append(modu.__dict__[site])
     return websites
 
-def check_update():
-    """Check and update holehe if not the last version"""
-    check_version = httpx.get("https://pypi.org/pypi/holehe/json")
-    if check_version.json()["info"]["version"] != __version__:
-        if os.name != 'nt':
-            p = Popen(["pip3",
-                       "install",
-                       "--upgrade",
-                       "holehe"],
-                      stdout=PIPE,
-                      stderr=PIPE)
-        else:
-            p = Popen(["pip",
-                       "install",
-                       "--upgrade",
-                       "holehe"],
-                      stdout=PIPE,
-                      stderr=PIPE)
-        (output, err) = p.communicate()
-        p_status = p.wait()
-        print("Holehe has just been updated, you can restart it.")
-        exit()
+
+def select_sites(websites, names):
+    """Keep only an explicit, auditable set of module names."""
+    requested = {name.strip().lower() for name in names.split(",") if name.strip()}
+    if not requested:
+        raise ValueError("--sites requires at least one module name")
+    known = {module.__name__.lower(): module for module in websites}
+    unknown = requested - known.keys()
+    if unknown:
+        raise ValueError("unknown site module(s): " + ", ".join(sorted(unknown)))
+    return [known[name] for name in sorted(requested)]
 
 def credit():
     """Print Credit"""
@@ -168,11 +156,11 @@ async def launch_module(module,email, client, out):
     try:
         await module(email, client, out)
     except Exception:
-        name=str(module).split('<function ')[1].split(' ')[0]
-        out.append({"name": name,"domain":data[name],
+        name=getattr(module, "__name__", "unknown")
+        out.append({"name": name,"domain":data.get(name, "unknown"),
                     "rateLimit": False,
                     "error": True,
-                    "exists": False,
+                    "exists": None,
                     "emailrecovery": None,
                     "phoneNumber": None,
                     "others": None})
@@ -193,8 +181,11 @@ async def maincore():
                     help="Create a CSV with the results")
     parser.add_argument("-T","--timeout", type=int , default=10, required=False,dest="timeout",
                     help="Set max timeout value (default 10)")
+    parser.add_argument("--sites", default="", help="Comma-separated modules to run, for example twitter,spotify")
+    parser.add_argument("--max-concurrency", type=int, default=5,
+                        help="Maximum simultaneous site probes (1-20; default 5)")
 
-    check_update()
+    # Never install packages or mutate the runtime during a research command.
     args = parser.parse_args()
     credit()
     email=args.email[0]
@@ -205,6 +196,13 @@ async def maincore():
     # Import Modules
     modules = import_submodules("holehe.modules")
     websites = get_functions(modules,args)
+    if args.sites:
+        try:
+            websites = select_sites(websites, args.sites)
+        except ValueError as exc:
+            parser.error(str(exc))
+    if not 1 <= args.max_concurrency <= 20:
+        parser.error("--max-concurrency must be between 1 and 20")
     # Get timeout
     timeout=args.timeout
     # Start time
@@ -215,9 +213,15 @@ async def maincore():
     out = []
     instrument = TrioProgress(len(websites))
     trio.lowlevel.add_instrument(instrument)
+    limiter = trio.CapacityLimiter(args.max_concurrency)
+
+    async def launch_limited(website):
+        async with limiter:
+            await launch_module(website, email, client, out)
+
     async with trio.open_nursery() as nursery:
         for website in websites:
-            nursery.start_soon(launch_module, website, email, client, out)
+            nursery.start_soon(launch_limited, website)
     trio.lowlevel.remove_instrument(instrument)
     # Sort by modules names
     out = sorted(out, key=lambda i: i['name'])

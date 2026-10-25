@@ -1,4 +1,20 @@
 # **Holehe OSINT - Email to Registered Accounts**
+
+## Fork hardening and limits
+
+This fork provides `--sites github,twitter,spotify` to limit a run to named
+modules and `--max-concurrency` (default 5, maximum 20) to bound simultaneous
+requests. Research commands no longer run `pip install --upgrade` at startup.
+
+The GitHub module returns an inconclusive result when GitHub blocks the signup
+page, changes its markup, or sends an ambiguous response. Network and module
+errors also return `exists: null`, never `exists: false`. Account-existence
+results do not reveal handles, mailbox control, or account creation dates.
+
+The remaining site modules have not undergone individual endpoint and
+notification-behavior review. Select only audited modules for automated use;
+the default CLI retains the upstream broad module set for manual work.
+
 👋 Hi there! For any professional inquiries or collaborations, please reach out to me at:
 megadose@protonmail.com
 
@@ -16,7 +32,8 @@ megadose@protonmail.com
 Holehe checks if an email is attached to an account on sites like twitter, instagram, imgur and more than 120 others.
 
 + Retrieves information using the forgotten password function.
-+ **[Does not alert the target email.](https://github.com/megadose/holehe/issues/12)**
++ Notification behavior depends on each service and may change; no blanket
+  guarantee applies to all modules.
 + Runs on [Python 3](https://www.python.org/downloads/release/python-370/).
 ## 🛠️ Installation
 
