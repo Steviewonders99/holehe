@@ -16,6 +16,7 @@ import sys
 import string
 import random
 import json
+from pathlib import Path
 
 from holehe.localuseragent import ua
 from holehe.instruments import TrioProgress
@@ -182,6 +183,7 @@ async def maincore():
     parser.add_argument("-T","--timeout", type=int , default=10, required=False,dest="timeout",
                     help="Set max timeout value (default 10)")
     parser.add_argument("--sites", default="", help="Comma-separated modules to run, for example twitter,spotify")
+    parser.add_argument("--json-output", default="", help="Write all probe outcomes to a private JSON file")
     parser.add_argument("--max-concurrency", type=int, default=5,
                         help="Maximum simultaneous site probes (1-20; default 5)")
 
@@ -229,6 +231,11 @@ async def maincore():
     await client.aclose()
     # Print the result
     print_result(out,args,email,start_time,websites)
+    if args.json_output:
+        output_path = Path(args.json_output).expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps({"results": out}, default=str), encoding="utf-8")
+        output_path.chmod(0o600)
     credit()
     # Export results
     export_csv(out,args,email)
